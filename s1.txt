@@ -1,0 +1,1316 @@
+#include "GraphicOutPut.h"
+#include "TcpClient.h"
+#include<iomanip>
+#include<thread>
+
+
+/******************************************------global data------******************************************/
+#define WINDOW_WIDTH 700
+#define WINDOW_HEIGHT 900
+
+#define TITLE_X (WINDOW_WIDTH/2-80)
+#define TITLE_Y (WINDOW_HEIGHT/2-240)
+
+#define ADMIN_X (TITLE_X-80)
+#define ADMIN_Y (TITLE_Y+120)
+#define ADMIN_INPUT_X (ADMIN_X+55)
+#define ADMIN_INPUT_Y (ADMIN_Y-5)
+
+#define PASSWD_X (ADMIN_X)
+#define PASSWD_Y (ADMIN_Y+60)
+#define PASSWD_INPUT_X (PASSWD_X+55)
+#define PASSWD_INPUT_Y (PASSWD_Y-5)
+
+#define NAME_X (PASSWD_X)
+#define NAME_Y (PASSWD_Y+60)
+#define NAME_INPUT_X (NAME_X+55)
+#define NAME_INPUT_Y (NAME_Y-5)
+
+#define REPASSWD_X (NAME_X-40)
+#define REPASSWD_Y (NAME_Y+60)
+#define REPASSWD_INPUT_X (REPASSWD_X+95)
+#define REPASSWD_INPUT_Y (REPASSWD_Y-5)
+
+#define REGIST_BUTTON_X (NAME_X+20)
+#define REGIST_BUTTON_Y (NAME_Y+120)
+
+#define LOGIN_BUTTON_X (REGIST_BUTTON_X+100)
+#define LOGIN_BUTTON_Y (REGIST_BUTTON_Y)
+
+#define COMMIT_BUTTON_X (LOGIN_BUTTON_X+100)
+#define COMMIT_BUTTON_Y (LOGIN_BUTTON_Y)
+
+enum STATUS
+{
+    LEVEL_EXIT,
+    LEVEL_0_REGIST,
+    LEVEL_0_LOGIN,
+    LEVEL_1,
+    LEVEL_2,
+    LEVEL_CONNECT_ERROR,
+};
+
+SDL_Event event;
+SDL_Window* win;
+SDL_Renderer* rdr;
+SDL_Point mouse_pt;
+SDL_Surface* win_surf;
+STATUS CUR_STATUS=LEVEL_0_LOGIN;
+TcpClient tcpc1("192.168.232.140",1026);
+
+SDL_Rect admin_input_rect={ADMIN_INPUT_X,ADMIN_INPUT_Y,220,30};
+SDL_Rect passwd_input_rect={PASSWD_INPUT_X,PASSWD_INPUT_Y,220,30};
+SDL_Rect name_input_rect={NAME_INPUT_X,NAME_INPUT_Y,220,30};
+SDL_Rect repasswd_input_rect={REPASSWD_INPUT_X,REPASSWD_INPUT_Y,220,30};
+
+SDL_Rect regist_rect={REGIST_BUTTON_X,REGIST_BUTTON_Y,50,30};
+SDL_Rect login_rect={LOGIN_BUTTON_X,LOGIN_BUTTON_Y,50,30};
+SDL_Rect commit_rect={COMMIT_BUTTON_X,COMMIT_BUTTON_Y,50,30};
+SDL_Rect level_0_error_rect={WINDOW_WIDTH/6,WINDOW_HEIGHT/4*3,WINDOW_WIDTH/6*4,80};
+
+SDL_Color black={0,0,0,255};
+SDL_Color white={255,255,255,255};
+SDL_Color red={255,0,0,255};
+
+RectButton r_regist(regist_rect,black,white,20,black,"注册");
+RectButton r_login(login_rect,black,white,20,black,"登录");
+RectButton r_commit(commit_rect,black,white,20,black,"提交");
+RectButton r_admin(admin_input_rect,black,white,20,black,NULL);
+RectButton r_passwd(passwd_input_rect,black,white,20,black,NULL);
+RectButton r_name(name_input_rect,black,white,20,black,NULL);
+RectButton r_repasswd(repasswd_input_rect,black,white,20,black,NULL);
+
+SDL_Rect r1_rect={0,25,150,275};
+SDL_Rect r2_rect={0,275,150,25};
+SDL_Rect r3_rect={0,325,150,275};
+SDL_Rect r4_rect={0,575,150,25};
+SDL_Rect r5_rect={0,620,150,300};
+
+RectButton r1(r1_rect,black,white,20,white,NULL);
+RectButton r2(r2_rect,black,white,14,white,NULL);
+RectButton r3(r3_rect,black,white,20,white,NULL);
+RectButton r4(r4_rect,black,white,20,white,NULL);
+RectButton r5(r5_rect,black,white,20,white,NULL);
+
+Text t_title(TITLE_X,TITLE_Y,black,60,"ZCat");
+Text t_admin(ADMIN_X,ADMIN_Y,black,20,"账号");
+Text t_passwd(PASSWD_X,PASSWD_Y,black,20,"密码");
+Text t_name(NAME_X,NAME_Y,black,20,"昵称");
+Text t_repasswd(REPASSWD_X,REPASSWD_Y,black,20,"确认密码");
+
+char* cur_buffer;
+char admin_buffer[256];
+char passwd_buffer[256];
+char name_buffer[256];
+char repasswd_buffer[256];
+char passwd_temp_buffer[256];
+
+bool admin_editing=false;
+bool passwd_editing=false;
+bool name_editing=false;
+bool repasswd_editing=false;
+
+data_rule dr;
+error_code cur_error={-999};
+user_info cur_user;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+Text friend_title_text(30,5,red,20,"好友列表");
+SDL_Rect friend_content_rect[10]={0,25,150,25};
+SDL_Rect friend_control_last_rect={0,275,50,25};
+SDL_Rect friend_control_page_rect={50,275,50,25};
+SDL_Rect friend_control_next_rect={100,275,50,25};
+RectButton friend_content_button[10];
+RectButton friend_control_last_button(friend_control_last_rect,black,white,15,black,"上一页");
+RectButton friend_control_page_button(friend_control_page_rect,black,white,15,black,"0 / 0");
+RectButton friend_control_next_button(friend_control_next_rect,black,white,15,black,"下一页");
+int friend_total_page=0;
+int friend_cur_page=1;
+friend_node* cur_friend_page_first=NULL;
+
+
+Text group_title_text(30,305,red,20,"群聊列表");
+SDL_Rect group_content_rect[10]={0,325,150,25};
+SDL_Rect group_control_last_rect={0,575,50,25};
+SDL_Rect group_control_page_rect={50,575,50,25};
+SDL_Rect group_control_next_rect={100,575,50,25};
+RectButton group_content_button[10];
+RectButton group_control_last_button(group_control_last_rect,black,white,15,black,"上一页");
+RectButton group_control_page_button(group_control_page_rect,black,white,15,black,"0 / 0");
+RectButton group_control_next_button(group_control_next_rect,black,white,15,black,"下一页");
+int group_total_page=0;
+int group_cur_page=1;
+group_node* cur_group_page_first=NULL;
+
+
+SDL_Rect tool_content_rect={0,625,150,25};
+Text tool_title_text(30,605,red,20,"工具列表");
+RectButton tool_content_button(tool_content_rect,black,white,15,black,NULL);
+
+
+Text cur_admin_text={WINDOW_WIDTH-250,10,red,20,""};
+SDL_Rect exit_login_rect={WINDOW_WIDTH-95,5,90,30};
+RectButton exit_login_button={exit_login_rect,black,white,20,red,"退出登录"};
+
+/******************************************------global function------******************************************/
+
+void ClearAllBuffer()
+{
+    memset(admin_buffer,0,sizeof(admin_buffer));
+    memset(passwd_buffer,0,sizeof(passwd_buffer));
+    memset(name_buffer,0,sizeof(name_buffer));
+    memset(repasswd_buffer,0,sizeof(repasswd_buffer));
+}
+
+/***************************************************-----RecvMessage-----***************************************************/
+
+void get_data_rule_msg()
+{
+    recv(tcpc1.GetSocket_fd(),(char*)&dr,sizeof(dr),0);
+
+    std::cout<<"admin length:"<<dr.admin_len<<std::endl;
+    std::cout<<"password length:"<<dr.password_len<<std::endl;
+    std::cout<<"name length:"<<dr.name_len<<std::endl;
+    std::cout<<"message length:"<<dr.message_len<<std::endl;
+    std::cout<<"group admin length:"<<dr.group_admin_len<<std::endl;
+    std::cout<<"name admin length:"<<dr.group_name_len<<std::endl;
+    std::cout<<"group nums:"<<dr.group_nums<<std::endl;
+}
+
+void get_regist_msg()
+{
+    recv(tcpc1.GetSocket_fd(),(char*)&cur_error,sizeof(cur_error),0);
+}
+
+void get_login_msg()
+{
+    recv(tcpc1.GetSocket_fd(),(char*)&cur_error,sizeof(cur_error),0);
+    if(cur_error.value==0)
+    {
+        recv(tcpc1.GetSocket_fd(),(char*)&cur_user,sizeof(cur_user),0);
+        std::cout<<"当前账号："<<cur_user.admin<<std::endl;
+        strcpy(cur_admin_text.text,cur_user.admin);
+
+        //download friend list
+        int type=11;
+        send(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+
+        //download group list
+        type=16;
+        send(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+        
+        CUR_STATUS=LEVEL_1;
+    }
+}
+
+void get_friend_list_msg()
+{
+    error_code ec;
+    recv(tcpc1.GetSocket_fd(),(char*)&ec,sizeof(ec),0);
+    if(ec.value==0)
+    {
+        int size,recv_once,recv_total=0,total_target;
+        recv(tcpc1.GetSocket_fd(),(char*)&size,sizeof(size),0);
+        
+        user_info* temp=new user_info[size];
+        char* pos_ptr=(char*)temp;
+        total_target=size*sizeof(user_info);
+        while(recv_total<total_target)
+        {
+            int need = total_target-recv_total;
+            recv_once=recv(tcpc1.GetSocket_fd(),(char*)pos_ptr,need,0);
+            recv_total+=recv_once;
+            pos_ptr+=recv_once;
+        }
+
+        user_info* find=temp;
+        for(int i=0;i<size;i++)
+            tcpc1.InsertFriendList(temp+i);
+        delete[] temp;
+
+        cur_friend_page_first=tcpc1.f_list.head.next;
+    }
+}
+
+void get_group_list_msg()
+{
+    error_code ec;
+    recv(tcpc1.GetSocket_fd(),(char*)&ec,sizeof(ec),0);
+    if(ec.value==0)
+    {
+        int size,recv_once,recv_total=0,total_target;
+        recv(tcpc1.GetSocket_fd(),(char*)&size,sizeof(size),0);
+        
+        group_info* temp=new group_info[size];
+        char* pos_ptr=(char*)temp;
+        total_target=size*sizeof(group_info);
+        while(recv_total<total_target)
+        {
+            int need = total_target-recv_total;
+            recv_once=recv(tcpc1.GetSocket_fd(),(char*)pos_ptr,need,0);
+            recv_total+=recv_once;
+            pos_ptr+=recv_once;
+        }
+
+        group_info* find=temp;
+        for(int i=0;i<size;i++)
+            tcpc1.InsertGroupList(temp+i);
+        delete[] temp;
+
+        cur_group_page_first=tcpc1.g_list.head.next;
+    }
+}
+
+void RecvMessage()
+{
+    int type;
+    while(CUR_STATUS)
+    {
+        type=-999;
+        int check=recv(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+        if(check==-1)
+            continue;
+
+        switch(type)
+        {
+            case 0:
+                get_data_rule_msg();
+                break;
+            case 1:
+                get_regist_msg();
+                break;
+            case 2:
+                get_login_msg();
+                break;
+            case 3:
+                break;
+            case 4:
+                break;
+            case 5:
+                break;
+            case 6:
+                break;
+            case 7:
+                break;
+            case 8:
+                break;
+            case 9:
+                break;
+            case 10:
+                break;
+            case 11:
+                get_friend_list_msg();
+                break;
+            case 12:
+                break;
+            case 13:
+                break;
+            case 14:
+                break;
+            case 15:
+                break;
+            case 16:
+                get_group_list_msg();
+                break;
+            case 17:
+                break;
+            case 18:
+                break;
+            case 19:
+                break;
+            case 20:
+                break;
+            case 21:
+                break;
+            case 22:
+                break;
+            case -1:
+                break;
+            case -2:
+                break;
+            case -3:
+                break;
+            case -4:
+                break;
+            case -5:
+                break;
+            case -6:
+                break;
+            case -7:
+                break;
+            case -8:
+                break;
+        }
+    }
+}
+
+/*****************************************-----level0-----*****************************************/
+
+void draw_level_0_error_0()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"操作成功！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_1()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"账号格式错误！允许的字符：字母 数字 _ @ # & *");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_2()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"账号已经存在！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_3()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"密码格式错误！允许的字符：字母 数字 _ @ # & *");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_4()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"账号不存在！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_5()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"密码错误！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_8()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"账号正在使用中！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error_12()
+{
+    RectButton r1(level_0_error_rect,black,white,18,red,"密码不一致！");
+    r1.Draw(rdr);
+}
+
+void draw_level_0_error()
+{
+    switch(cur_error.value)
+    {
+        case 0:
+            draw_level_0_error_0();
+            break;
+        case 1:
+            draw_level_0_error_1();
+            break;
+        case 2:
+            draw_level_0_error_2();
+            break;
+        case 3:
+            draw_level_0_error_3();
+            break;
+        case 4:
+            draw_level_0_error_4();
+            break;
+        case 5:
+            draw_level_0_error_5();
+            break;
+        case 8:
+            draw_level_0_error_8();
+            break;
+        case 12:
+            draw_level_0_error_12();
+            break;
+    }
+}
+
+void draw_level_connect_error()
+{
+    SDL_SetRenderDrawColor(rdr,245,245,235,255);
+    SDL_RenderClear(rdr);
+
+    Text t1(TITLE_X-210,TITLE_Y-20,red,40,"连接失败");
+    Text t2(TITLE_X-210,TITLE_Y+55,black,20,"1.网络环境不佳，请稍后重试...");
+    Text t3(TITLE_X-210,TITLE_Y+100,black,20,"2.服务器关闭，请联系管理员(18271312836@163.com)");
+    
+    SDL_Rect rect1={TITLE_X-220,TITLE_Y+40,485,100};
+    RectButton r1(rect1,black,white,20,black,NULL);
+
+    r1.Draw(rdr);
+    t1.Draw(rdr);
+    t2.Draw(rdr);
+    t3.Draw(rdr);
+
+    SDL_RenderPresent(rdr);
+}
+
+void draw_level_0_regist()
+{
+    SDL_SetRenderDrawColor(rdr,245,245,235,255);
+    SDL_RenderClear(rdr);
+
+    r_regist.Draw(rdr);
+    r_login.Draw(rdr);
+    r_commit.Draw(rdr);
+    r_admin.Draw(rdr);
+    r_passwd.Draw(rdr);
+    r_name.Draw(rdr);
+    r_repasswd.Draw(rdr);
+
+    t_title.Draw(rdr);
+    t_admin.Draw(rdr);
+    t_passwd.Draw(rdr);
+    t_name.Draw(rdr);
+    t_repasswd.Draw(rdr);
+
+    if(strlen(admin_buffer)>0)
+    {
+        Text text(ADMIN_INPUT_X+3,ADMIN_INPUT_Y+8,black,14,admin_buffer);
+        text.Draw(rdr);
+    }
+
+    if(strlen(passwd_buffer)>0)
+    {
+        for(int i=0;i<strlen(passwd_buffer);i++)
+        {
+            passwd_temp_buffer[i]='*';
+        }
+
+        Text text(PASSWD_INPUT_X+3,PASSWD_INPUT_Y+8,black,14,passwd_temp_buffer);
+        text.Draw(rdr);
+        memset(passwd_temp_buffer,0,sizeof(passwd_temp_buffer));
+    }
+
+    if(strlen(name_buffer)>0)
+    {
+        Text text(NAME_INPUT_X+3,NAME_INPUT_Y+8,black,14,name_buffer);
+        text.Draw(rdr);
+    }   
+
+    if(strlen(repasswd_buffer)>0)
+    {
+        for(int i=0;i<strlen(repasswd_buffer);i++)
+        {
+            passwd_temp_buffer[i]='*';
+        }
+
+        Text text(REPASSWD_INPUT_X+3,REPASSWD_INPUT_Y+8,black,14,passwd_temp_buffer);
+        text.Draw(rdr);
+        memset(passwd_temp_buffer,0,sizeof(passwd_temp_buffer));
+    }
+
+    draw_level_0_error();
+    SDL_RenderPresent(rdr);
+}
+
+void draw_level_0_login()
+{
+    SDL_SetRenderDrawColor(rdr,245,245,235,255);
+    SDL_RenderClear(rdr);
+
+    r_regist.Draw(rdr);
+    r_login.Draw(rdr);
+    r_commit.Draw(rdr);
+    r_admin.Draw(rdr);
+    r_passwd.Draw(rdr);
+
+    t_title.Draw(rdr);
+    t_admin.Draw(rdr);
+    t_passwd.Draw(rdr);
+
+    if(strlen(admin_buffer)>0)
+    {
+        Text text(ADMIN_INPUT_X+3,ADMIN_INPUT_Y+8,black,14,admin_buffer);
+        text.Draw(rdr);
+    }
+
+    if(strlen(passwd_buffer)>0)
+    {
+        for(int i=0;i<strlen(passwd_buffer);i++)
+        {
+            passwd_temp_buffer[i]='*';
+        }
+
+        Text text(PASSWD_INPUT_X+3,PASSWD_INPUT_Y+8,black,14,passwd_temp_buffer);
+        text.Draw(rdr);
+        memset(passwd_temp_buffer,0,sizeof(passwd_temp_buffer));
+    }
+
+    draw_level_0_error();
+    SDL_RenderPresent(rdr);
+}
+
+void event_loop_connect_error()
+{
+    while(SDL_PollEvent(&event))
+    {
+        switch(event.type)
+        {
+            case SDL_QUIT:
+                CUR_STATUS=LEVEL_EXIT;
+                break;
+        }
+    }
+}
+
+//已通过图形化的方式限制了输入长度，无需再检查
+void event_loop_regist()
+{
+    while(SDL_PollEvent(&event))
+    {
+        switch(event.type)
+        {
+            case SDL_QUIT:
+                CUR_STATUS=LEVEL_EXIT;
+                break;
+            case SDL_MOUSEMOTION:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&regist_rect))
+                {
+                    r_regist.fill_color.r=0;
+                    r_regist.fill_color.g=220;
+                    r_regist.fill_color.b=0;
+                }
+                else
+                {
+                    r_regist.fill_color.r=255;
+                    r_regist.fill_color.g=255;
+                    r_regist.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&login_rect))
+                {
+                    r_login.fill_color.r=0;
+                    r_login.fill_color.g=220;
+                    r_login.fill_color.b=0;
+                }
+                else
+                {
+                    r_login.fill_color.r=255;
+                    r_login.fill_color.g=255;
+                    r_login.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&commit_rect))
+                {
+                    r_commit.fill_color.r=0;
+                    r_commit.fill_color.g=220;
+                    r_commit.fill_color.b=0;
+                }
+                else
+                {
+                    r_commit.fill_color.r=255;
+                    r_commit.fill_color.g=255;
+                    r_commit.fill_color.b=255;
+                }
+                break;
+            case SDL_MOUSEBUTTONDOWN:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&regist_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    ClearAllBuffer();
+                    CUR_STATUS=LEVEL_0_REGIST;
+                    std::cout<<"已切换为注册模块"<<std::endl;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&login_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    ClearAllBuffer();
+                    CUR_STATUS=LEVEL_0_LOGIN;
+                    std::cout<<"已切换为登录模块"<<std::endl;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&commit_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    if(strcmp(passwd_buffer,repasswd_buffer))
+                    {
+                        cur_error.value=12;
+                        ClearAllBuffer();
+                        return;
+                    }
+
+                    int type=1;
+                    user_info ug;
+                    strcpy(ug.admin,admin_buffer);
+                    strcpy(ug.passwd,passwd_buffer);
+                    strcpy(ug.name,name_buffer);
+
+                    send(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+                    send(tcpc1.GetSocket_fd(),(char*)&ug,sizeof(ug),0);
+
+                    std::cout<<"已提交："<<std::endl;
+                    std::cout<<"账号 "<<admin_buffer<<std::endl;
+                    std::cout<<"密码 "<<passwd_buffer<<std::endl;
+                    std::cout<<"昵称 "<<name_buffer<<std::endl;
+                    std::cout<<"确认密码 "<<repasswd_buffer<<std::endl;
+
+                    r_commit.fill_color.r=255;
+                    r_commit.fill_color.g=255;
+                    r_commit.fill_color.b=255;
+                    ClearAllBuffer();
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&admin_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=admin_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_admin.border_color.g=220;
+                    admin_editing=true;
+                }
+                else
+                {
+                    admin_editing=false;
+                    r_admin.border_color.g=0;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&passwd_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=passwd_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_passwd.border_color.g=220;
+                    passwd_editing=true;
+                }
+                else
+                {
+                    passwd_editing=false;
+                    r_passwd.border_color.g=0;
+                }
+                    
+
+                if(SDL_PointInRect(&mouse_pt,&name_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=name_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_name.border_color.g=220;
+                    name_editing=true;
+                }
+                else
+                {
+                    name_editing=false;
+                    r_name.border_color.g=0;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&repasswd_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=repasswd_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_repasswd.border_color.g=220;
+                    repasswd_editing=true;
+                }
+                else
+                {
+                    repasswd_editing=false;
+                    r_repasswd.border_color.g=0;
+                }
+                break;
+            case SDL_KEYDOWN:
+                if(event.key.keysym.sym == SDLK_BACKSPACE) 
+                {
+                    int len;
+                    if(admin_editing)
+                    {
+                        len=strlen(admin_buffer);
+                        cur_buffer=admin_buffer;
+                    } 
+                    else if(passwd_editing)
+                    {
+                        len=strlen(passwd_buffer);
+                        cur_buffer=passwd_buffer;
+                    }
+                    else if(name_editing)
+                    {
+                        len=strlen(name_buffer);
+                        cur_buffer=name_buffer;
+                    }
+                    else if(repasswd_editing)
+                    {
+                        len=strlen(repasswd_buffer);
+                        cur_buffer=repasswd_buffer;
+                    }
+
+                    if(len == 0) return;
+    
+                    if(len >= 3) 
+                    {
+                        unsigned char ch = cur_buffer[len-3];
+                        //中文UTF-8首字节范围
+                        if((ch & 0xE0) == 0xE0 && ch != 0xC0 && ch != 0xC1)
+                        {
+                            cur_buffer[len-3] = '\0';//删3字节
+                            return;
+                        }
+                    }
+                    cur_buffer[len-1] = '\0';//删1字节
+                }
+                break;
+            case SDL_TEXTEDITING:
+                //std::cout<<event.edit.text<<std::endl;
+                break;
+            case SDL_TEXTINPUT:
+                if(admin_editing&&strlen(admin_buffer)+strlen(event.text.text)<=15)
+                {
+                    strcat(admin_buffer,event.text.text);
+                }
+                if(passwd_editing&&strlen(passwd_buffer)+strlen(event.text.text)<=15)
+                {
+                    strcat(passwd_buffer,event.text.text);
+                }
+                if(name_editing&&strlen(name_buffer)+strlen(event.text.text)<=30)
+                {
+                    strcat(name_buffer,event.text.text);
+                }
+                if(repasswd_editing&&strlen(repasswd_buffer)+strlen(event.text.text)<=15)
+                {
+                    strcat(repasswd_buffer,event.text.text);
+                }
+                break;
+        }
+    }
+}
+
+void event_loop_login()
+{
+    while(SDL_PollEvent(&event))
+    {
+        switch(event.type)
+        {
+            case SDL_QUIT:
+                CUR_STATUS=LEVEL_EXIT;
+                break;
+            case SDL_MOUSEMOTION:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&regist_rect))
+                {
+                    r_regist.fill_color.r=0;
+                    r_regist.fill_color.g=220;
+                    r_regist.fill_color.b=0;
+                }
+                else
+                {
+                    r_regist.fill_color.r=255;
+                    r_regist.fill_color.g=255;
+                    r_regist.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&login_rect))
+                {
+                    r_login.fill_color.r=0;
+                    r_login.fill_color.g=220;
+                    r_login.fill_color.b=0;
+                }
+                else
+                {
+                    r_login.fill_color.r=255;
+                    r_login.fill_color.g=255;
+                    r_login.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&commit_rect))
+                {
+                    r_commit.fill_color.r=0;
+                    r_commit.fill_color.g=220;
+                    r_commit.fill_color.b=0;
+                }
+                else
+                {
+                    r_commit.fill_color.r=255;
+                    r_commit.fill_color.g=255;
+                    r_commit.fill_color.b=255;
+                }
+                break;
+            case SDL_MOUSEBUTTONDOWN:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&regist_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    ClearAllBuffer();
+                    CUR_STATUS=LEVEL_0_REGIST;
+                    std::cout<<"已切换为注册模块"<<std::endl;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&login_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    ClearAllBuffer();
+                    CUR_STATUS=LEVEL_0_LOGIN;
+                    std::cout<<"已切换为登录模块"<<std::endl;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&commit_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    int type=2;
+                    user_info ug;
+                    strcpy(ug.admin,admin_buffer);
+                    strcpy(ug.passwd,passwd_buffer);
+
+                    send(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+                    send(tcpc1.GetSocket_fd(),(char*)&ug,sizeof(ug),0);
+
+                    std::cout<<"已提交："<<std::endl;
+                    std::cout<<"账号 "<<admin_buffer<<std::endl;
+                    std::cout<<"密码 "<<passwd_buffer<<std::endl;
+
+                    r_commit.fill_color.r=255;
+                    r_commit.fill_color.g=255;
+                    r_commit.fill_color.b=255;
+                    ClearAllBuffer();
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&admin_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=admin_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_admin.border_color.g=220;
+                    admin_editing=true;
+                }
+                else
+                {
+                    admin_editing=false;
+                    r_admin.border_color.g=0;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&passwd_input_rect)&&event.button.button==SDL_BUTTON_LEFT)
+                {
+                    SDL_Rect rect=passwd_input_rect;
+                    rect.y+=20;
+                    SDL_SetTextInputRect(&rect);
+
+                    r_passwd.border_color.g=220;
+                    passwd_editing=true;
+                }
+                else
+                {
+                    passwd_editing=false;
+                    r_passwd.border_color.g=0;
+                }
+                break;
+            case SDL_KEYDOWN:
+                if(event.key.keysym.sym == SDLK_BACKSPACE) 
+                {
+                    int len;
+                    if(admin_editing)
+                    {
+                        len=strlen(admin_buffer);
+                        cur_buffer=admin_buffer;
+                    } 
+                    else if(passwd_editing)
+                    {
+                        len=strlen(passwd_buffer);
+                        cur_buffer=passwd_buffer;
+                    }
+
+                    if(len == 0) return;
+    
+                    if(len >= 3) 
+                    {
+                        unsigned char ch = cur_buffer[len-3];
+                        //中文UTF-8首字节范围
+                        if((ch & 0xE0) == 0xE0 && ch != 0xC0 && ch != 0xC1)
+                        {
+                            cur_buffer[len-3] = '\0';//删3字节
+                            return;
+                        }
+                    }
+                    cur_buffer[len-1] = '\0';//删1字节
+                }
+                break;
+            case SDL_TEXTEDITING:
+                //std::cout<<event.edit.text<<std::endl;
+                break;
+            case SDL_TEXTINPUT:
+                if(admin_editing&&strlen(admin_buffer)+strlen(event.text.text)<=15)
+                {
+                    strcat(admin_buffer,event.text.text);
+                }
+                if(passwd_editing&&strlen(passwd_buffer)+strlen(event.text.text)<=15)
+                {
+                    strcat(passwd_buffer,event.text.text);
+                }
+                break;
+        }
+    }
+}
+
+/*****************************************-----level1-----*****************************************/
+
+void draw_level_1_index()
+{
+    SDL_SetRenderDrawColor(rdr,245,245,230,255);
+    SDL_RenderClear(rdr);
+/**************************************-----friend-----**************************************/
+    friend_title_text.Draw(rdr);
+    
+    friend_node* ptr=cur_friend_page_first;
+    for(int i=0;i<10;i++)
+    {
+        if(ptr!=NULL)
+        {
+            strcpy(friend_content_button[i].text,ptr->data.name);
+            ptr=ptr->next;
+        }
+        friend_content_button[i].Draw(rdr);
+        memset(friend_content_button[i].text,0,sizeof(friend_content_button[i].text));
+    }
+    
+    friend_total_page=tcpc1.f_list.len/10;
+    if(tcpc1.f_list.len-friend_total_page*10>0)
+        friend_total_page++;
+
+    char str1[32];
+    const char* str2=" / ";
+    char str3[32];
+
+    snprintf(str1, sizeof(str1),"%d",friend_cur_page);
+    snprintf(str3, sizeof(str3),"%d",friend_total_page);
+    strcat(str1,str2);
+    strcat(str1,str3);
+    strcpy(friend_control_page_button.text,str1);
+
+    friend_control_last_button.Draw(rdr);
+    friend_control_page_button.Draw(rdr);
+    friend_control_next_button.Draw(rdr);
+/**************************************-----group-----**************************************/
+    group_title_text.Draw(rdr);
+
+    group_node* ptr2=cur_group_page_first;
+    for(int i=0;i<10;i++)
+    {
+        if(ptr2!=NULL)
+        {
+            strcpy(group_content_button[i].text,ptr2->data.name);
+            ptr2=ptr2->next;
+        }
+
+        group_content_button[i].Draw(rdr);
+        memset(group_content_button[i].text,0,sizeof(group_content_button[i].text));
+    }
+
+    group_total_page=tcpc1.g_list.len/10;
+    if(tcpc1.g_list.len-group_total_page*10>0)
+        group_total_page++;
+
+    char str4[32];
+    const char* str5=" / ";
+    char str6[32];
+
+    snprintf(str4, sizeof(str4),"%d",group_cur_page);
+    snprintf(str6, sizeof(str6),"%d",group_total_page);
+    strcat(str4,str5);
+    strcat(str4,str6);
+    strcpy(group_control_page_button.text,str4);
+
+    group_control_last_button.Draw(rdr);
+    group_control_page_button.Draw(rdr);
+    group_control_next_button.Draw(rdr);
+/**************************************-----tool-----**************************************/
+    tool_title_text.Draw(rdr);
+    for(int i=0;i<11;i++)
+    {
+        tool_content_button.Draw(rdr);
+        tool_content_button.rect.y+=25;
+    }
+    tool_content_button.rect.y=625;
+
+    cur_admin_text.Draw(rdr);
+    exit_login_button.Draw(rdr);
+
+    SDL_RenderPresent(rdr);
+}
+
+/**************************************-----event loop-----**************************************/
+void event_loop_index()
+{
+    while(SDL_PollEvent(&event))
+    {
+        switch(event.type)
+        {
+            case SDL_QUIT:
+                CUR_STATUS=LEVEL_EXIT;
+                break;
+            case SDL_MOUSEMOTION:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&exit_login_rect))
+                {
+                    exit_login_button.fill_color.r=0;
+                    exit_login_button.fill_color.g=220;
+                    exit_login_button.fill_color.b=0;
+                }
+                else
+                {
+                    exit_login_button.fill_color.r=255;
+                    exit_login_button.fill_color.g=255;
+                    exit_login_button.fill_color.b=255;
+                }
+                
+                for(int i=0;i<10;i++)
+                {
+                    if(SDL_PointInRect(&mouse_pt,&(friend_content_rect[i])))
+                    {
+                        friend_content_button[i].fill_color.r=0;
+                        friend_content_button[i].fill_color.g=220;
+                        friend_content_button[i].fill_color.b=0;
+                    }
+                    else
+                    {
+                        friend_content_button[i].fill_color.r=255;
+                        friend_content_button[i].fill_color.g=255;
+                        friend_content_button[i].fill_color.b=255;
+                    }
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&friend_control_last_rect))
+                {
+                    friend_control_last_button.fill_color.r=0;
+                    friend_control_last_button.fill_color.g=220;
+                    friend_control_last_button.fill_color.b=0;
+                }
+                else
+                {
+                    friend_control_last_button.fill_color.r=255;
+                    friend_control_last_button.fill_color.g=255;
+                    friend_control_last_button.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&friend_control_next_rect))
+                {
+                    friend_control_next_button.fill_color.r=0;
+                    friend_control_next_button.fill_color.g=220;
+                    friend_control_next_button.fill_color.b=0;
+                }
+                else
+                {
+                    friend_control_next_button.fill_color.r=255;
+                    friend_control_next_button.fill_color.g=255;
+                    friend_control_next_button.fill_color.b=255;
+                }
+
+                for(int i=0;i<10;i++)
+                {
+                    if(SDL_PointInRect(&mouse_pt,&(group_content_rect[i])))
+                    {
+                        group_content_button[i].fill_color.r=0;
+                        group_content_button[i].fill_color.g=220;
+                        group_content_button[i].fill_color.b=0;
+                    }
+                    else
+                    {
+                        group_content_button[i].fill_color.r=255;
+                        group_content_button[i].fill_color.g=255;
+                        group_content_button[i].fill_color.b=255;
+                    }
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&group_control_last_rect))
+                {
+                    group_control_last_button.fill_color.r=0;
+                    group_control_last_button.fill_color.g=220;
+                    group_control_last_button.fill_color.b=0;
+                }
+                else
+                {
+                    group_control_last_button.fill_color.r=255;
+                    group_control_last_button.fill_color.g=255;
+                    group_control_last_button.fill_color.b=255;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&group_control_next_rect))
+                {
+                    group_control_next_button.fill_color.r=0;
+                    group_control_next_button.fill_color.g=220;
+                    group_control_next_button.fill_color.b=0;
+                }
+                else
+                {
+                    group_control_next_button.fill_color.r=255;
+                    group_control_next_button.fill_color.g=255;
+                    group_control_next_button.fill_color.b=255;
+                }
+                break;
+
+                case SDL_MOUSEBUTTONDOWN:
+                mouse_pt.x=event.motion.x,mouse_pt.y=event.motion.y;
+                if(SDL_PointInRect(&mouse_pt,&exit_login_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    int type=6;
+                    send(tcpc1.GetSocket_fd(),(char*)&type,sizeof(type),0);
+                    memset(&cur_user,0,sizeof(cur_user));
+                    CUR_STATUS=LEVEL_0_LOGIN;
+                    std::cout<<"已退出登录"<<std::endl;
+
+                    //clear last remain status
+                    cur_error.value=-999;
+                    exit_login_button.fill_color.r=255;
+                    exit_login_button.fill_color.g=255;
+                    exit_login_button.fill_color.b=255;
+
+                    //clear last admin data
+                    tcpc1.DestroyFriendList();
+                    tcpc1.DestroyGroupList();
+                    
+                    friend_total_page=0;
+                    group_total_page=0;
+                    friend_cur_page=1;
+                    group_cur_page=1;
+
+                    cur_friend_page_first=NULL;
+                    cur_group_page_first=NULL;
+                }
+
+                friend_node* temp=cur_friend_page_first;
+                group_node* temp2=cur_group_page_first;
+                for(int i=0;i<10;i++)
+                {
+                    if(SDL_PointInRect(&mouse_pt,&(friend_content_rect[i]))&&(event.button.button==SDL_BUTTON_LEFT))
+                    {
+                        if(temp!=NULL)
+                        {
+                            std::cout<<temp->data.id<<" "<<temp->data.name<<std::endl;
+                        }
+                    }
+
+                    if(SDL_PointInRect(&mouse_pt,&(group_content_rect[i]))&&(event.button.button==SDL_BUTTON_LEFT))
+                    {
+                        if(temp2!=NULL)
+                        {
+                            std::cout<<temp2->data.id<<" "<<temp2->data.name<<std::endl;
+                        }
+                    }
+                    
+                    if(temp!=NULL)
+                        temp=temp->next;
+
+                    if(temp2!=NULL)
+                        temp2=temp2->next;
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&friend_control_last_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    std::cout<<"上一页"<<std::endl;
+                    if(tcpc1.f_list.len>10&&cur_friend_page_first->last!=&(tcpc1.f_list.head))
+                    {
+                        for(int i=0;i<10;i++)
+                            cur_friend_page_first=cur_friend_page_first->last;
+                        friend_cur_page--;
+                    }
+                }
+
+                if(SDL_PointInRect(&mouse_pt,&friend_control_next_rect)&&(event.button.button==SDL_BUTTON_LEFT))
+                {
+                    std::cout<<"下一页"<<std::endl;
+                    if(tcpc1.f_list.len>10*friend_cur_page&&cur_friend_page_first->next!=&(tcpc1.f_list.head))
+                    {
+                        for(int i=0;i<10;i++)
+                            cur_friend_page_first=cur_friend_page_first->next;
+                        friend_cur_page++;
+                    }
+                }
+
+                break;
+        }
+    }
+}
+
+/*****************************************-----modle-----*****************************************/
+
+void init()
+{   
+    Graphic_init();
+
+    if(!tcpc1.Connect())
+    {
+        CUR_STATUS=LEVEL_CONNECT_ERROR;
+    }
+
+    if(CUR_STATUS!=LEVEL_CONNECT_ERROR)
+    {
+        tcpc1.get_data_rule();
+    }
+
+    win=SDL_CreateWindow
+    (
+        "Zcat",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        SDL_WINDOW_SHOWN
+    );
+
+    rdr=SDL_CreateRenderer(win,-1,0);
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+
+    //init data
+    friend_content_rect[0]={0,25,150,25};
+    group_content_rect[0]={0,325,150,25};
+    for(int i=0;i<10;i++)
+    {
+        if(i!=0)
+        {
+            friend_content_rect[i]=friend_content_rect[i-1];
+            friend_content_rect[i].y+=25;
+
+            group_content_rect[i]=group_content_rect[i-1];
+            group_content_rect[i].y+=25;
+        }
+
+        friend_content_button[i].SetValue(friend_content_rect[i],black,white,15,black,NULL);
+        group_content_button[i].SetValue(group_content_rect[i],black,white,15,black,NULL);
+    }
+}
+
+void loop()
+{
+    std::thread recv_thread(RecvMessage);
+
+    while(CUR_STATUS)
+    {
+        switch(CUR_STATUS)
+        {
+            case LEVEL_CONNECT_ERROR:
+                draw_level_connect_error();
+                event_loop_connect_error();
+                break;
+            case LEVEL_0_REGIST:
+                draw_level_0_regist();
+                event_loop_regist();
+                break;
+            case LEVEL_0_LOGIN:
+                draw_level_0_login();
+                event_loop_login();
+                break;
+            case LEVEL_1:
+                draw_level_1_index();
+                event_loop_index();
+                break;
+        }
+    }
+    recv_thread.join();
+}
+
+void destroy()
+{
+    SDL_DestroyRenderer(rdr);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+}
+
+/*****************************************-----main-----*****************************************/
+
+int main(int argv,char* argc[])
+{
+    init();    
+    loop();
+    destroy();
+    return 0;
+}
